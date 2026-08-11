@@ -11,6 +11,18 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Root domain welcome endpoint
+app.get('/', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'Fundsroom Infotech Mini ERP + CRM Backend API Server',
+    status: 'ONLINE',
+    apiBaseUrl: '/api/v1',
+    healthCheck: '/api/v1/health',
+    documentation: 'See README.md for complete REST API usage',
+  });
+});
+
 // Root API welcome endpoint
 app.get('/api/v1', (req, res) => {
   res.status(200).json({
