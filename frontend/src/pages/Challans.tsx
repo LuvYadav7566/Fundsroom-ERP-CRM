@@ -1,0 +1,265 @@
+import React, { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { challanService } from '../services/challanService';
+import { Challan, PaginationMeta } from '../types';
+import { useAuth } from '../hooks/useAuth';
+import { useToast } from '../hooks/useToast';
+import { LoadingSkeleton } from '../components/common/LoadingSkeleton';
+import { EmptyState } from '../components/common/EmptyState';
+import { Badge } from '../components/common/Badge';
+import { Button } from '../components/common/Button';
+import { ConfirmDialog } from '../components/common/ConfirmDialog';
+import { Search, Plus, Eye, CheckCircle2, XCircle, FileText, UserCheck, Calendar } from 'lucide-react';
+
+export const Challans: React.FC = () => {
+  const { hasRole } = useAuth();
+  const { showSuccess, showError } = useToast();
+  const navigate = useNavigate();
+
+  const [challans, setChallans] = useState<Challan[]>([]);
+  const [meta, setMeta] = useState<PaginationMeta>({ page: 1, limit: 10, total: 0, totalPages: 1 });
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  // Filters
+  const [search, setSearch] = useState<string>('');
+  const [statusFilter, setStatusFilter] = useState<string>('');
+  const [page, setPage] = useState<number>(1);
+
+  // Confirmation dialog
+  const [confirmChallanId, setConfirmChallanId] = useState<string | null>(null);
+  const [isConfirming, setIsConfirming] = useState<boolean>(false);
+
+  const fetchChallans = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res = await challanService.getChallans({
+        search,
+        status: statusFilter,
+        page,
+        limit: 10,
+      });
+      setChallans(res.data);
+      if (res.meta) setMeta(res.meta);
+    } catch (err) {
+      showError('Failed to load sales challans.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [search, statusFilter, page, showError]);
+
+  useEffect(() => {
+    fetchChallans();
+  }, [fetchChallans]);
+
+  const handleConfirmChallanAction = async () => {
+    if (!confirmChallanId) return;
+    setIsConfirming(true);
+    try {
+      const updated = await challanService.confirmChallan(confirmChallanId);
+      showSuccess(`Challan '${updated.challanNumber}' confirmed successfully! Inventory deducted.`);
+      setConfirmChallanId(null);
+      fetchChallans();
+    } catch (err: any) {
+      const msg = err.response?.data?.message || 'Failed to confirm challan.';
+      showError(msg);
+    } finally {
+      setIsConfirming(false);
+    }
+  };
+
+  return (
+    <div>
+      {/* Page Header */}
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Sales Challans Workflow</h1>
+          <p className="page-description">
+            Manage draft orders, confirm transactions with stock deduction, and inspect official challan documents.
+          </p>
+        </div>
+        {hasRole('ADMIN', 'SALES') && (
+          <Button variant="primary" icon={<Plus size={18} />} onClick={() => navigate('/challans/create')}>
+            Create Sales Challan
+          </Button>
+        )}
+      </div>
+
+      {/* Search and Filters */}
+      <div className="card filter-bar" style={{ padding: '1rem', marginBottom: '1.5rem' }}>
+        <div className="search-input-wrapper">
+          <Search className="search-icon" />
+          <input
+            type="text"
+            className="form-control"
+            placeholder="Search by challan number (e.g. FR-CH-2026-0001) or customer..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+          />
+        </div>
+
+        <select
+          className="form-control"
+          style={{ width: 'auto', minWidth: '160px' }}
+          value={statusFilter}
+          onChange={(e) => {
+            setStatusFilter(e.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">All Challan Statuses</option>
+          <option value="DRAFT">DRAFT (Pending)</option>
+          <option value="CONFIRMED">CONFIRMED (Deducted)</option>
+          <option value="CANCELLED">CANCELLED</option>
+        </select>
+      </div>
+
+      {/* Challan Table */}
+      {isLoading ? (
+        <LoadingSkeleton height="50px" count={5} />
+      ) : challans.length === 0 ? (
+        <EmptyState
+          title="No Sales Challans Found"
+          description="No sales challans match your search or filter requirements."
+          actionText={hasRole('ADMIN', 'SALES') ? 'Create New Challan' : undefined}
+          onAction={() => navigate('/challans/create')}
+        />
+      ) : (
+        <div className="table-container">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Challan Number</th>
+                <th>Customer Business</th>
+                <th>Total Quantity</th>
+                <th>Total Value (Snapshot)</th>
+                <th>Status</th>
+                <th>Generated By</th>
+                <th>Date</th>
+                <th style={{ textAlign: 'right' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {challans.map((challan) => (
+                <tr
+                  key={challan.id}
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => navigate(`/challans/${challan.id}`)}
+                >
+                  <td style={{ fontWeight: 700, color: 'var(--color-secondary)' }}>
+                    {challan.challanNumber}
+                  </td>
+                  <td>
+                    <div style={{ fontWeight: 600, color: 'var(--color-primary)' }}>
+                      {challan.customer?.businessName}
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                      Contact: {challan.customer?.customerName}
+                    </div>
+                  </td>
+                  <td style={{ fontWeight: 700 }}>{challan.totalQuantity} Units</td>
+                  <td style={{ fontWeight: 700, color: 'var(--color-text)' }}>
+                    ₹{challan.totalAmount ? challan.totalAmount.toLocaleString('en-IN') : 0}
+                  </td>
+                  <td>
+                    {challan.status === 'CONFIRMED' && <Badge variant="success">Confirmed</Badge>}
+                    {challan.status === 'DRAFT' && <Badge variant="warning">Draft</Badge>}
+                    {challan.status === 'CANCELLED' && <Badge variant="danger">Cancelled</Badge>}
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem' }}>
+                      <UserCheck size={13} color="var(--color-text-muted)" />
+                      {challan.user?.name || 'Sales Staff'}
+                    </div>
+                  </td>
+                  <td style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <Calendar size={13} />
+                      {new Date(challan.createdAt).toLocaleDateString('en-IN')}
+                    </div>
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    <div style={{ display: 'inline-flex', gap: '0.5rem' }}>
+                      <button
+                        className="btn btn-outline btn-sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/challans/${challan.id}`);
+                        }}
+                        title="View Official Document"
+                      >
+                        <Eye size={14} /> View
+                      </button>
+
+                      {hasRole('ADMIN', 'SALES') && challan.status === 'DRAFT' && (
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmChallanId(challan.id);
+                          }}
+                          title="Confirm Challan & Deduct Stock"
+                        >
+                          <CheckCircle2 size={14} /> Confirm
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {/* Pagination */}
+          {meta.totalPages > 1 && (
+            <div
+              style={{
+                padding: '1rem 1.25rem',
+                borderTop: '1px solid var(--color-border)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                backgroundColor: '#F8FAFC',
+              }}
+            >
+              <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                Page <strong>{meta.page}</strong> of <strong>{meta.totalPages}</strong> ({meta.total} Sales Challans)
+              </span>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => p - 1)}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= meta.totalPages}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={!!confirmChallanId}
+        onClose={() => setConfirmChallanId(null)}
+        onConfirm={handleConfirmChallanAction}
+        title="Confirm Sales Challan Transaction?"
+        message="Confirming this sales challan will immediately perform atomic inventory validation, deduct stock for all line items, and log outward stock movements."
+        confirmText="Confirm & Deduct Inventory"
+        isLoading={isConfirming}
+      />
+    </div>
+  );
+};
