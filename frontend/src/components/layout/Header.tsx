@@ -24,6 +24,11 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
 
       {user && (
         <div className="header-user-profile">
+          <div className="system-status-pill">
+            <div className="status-dot-active"></div>
+            <span>Cloud System Active</span>
+          </div>
+
           <div className="user-info">
             <div className="user-name">{user.name}</div>
             <div className="user-role-badge">
